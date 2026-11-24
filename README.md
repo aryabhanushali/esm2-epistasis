@@ -149,10 +149,20 @@ Measured on a Mac (MPS): 8M extraction of 13,150 variants 25 s; 8M accessibility
 |---|---|---|---|
 | Data, cubes, probe split | yes | yes (counts match ORBIT) | yes |
 | WHT, additive baseline | yes | yes (24 tests) | yes |
-| `train.py`, `extract_activations.py`, `accessibility.py`, `visualize.py` | yes | smoke runs on 8M (train also on 150M) | no |
-| 4 conditions, 3 seeds, before and after adaptation | n/a | n/a | not run |
+| `train.py`, `extract_activations.py`, `accessibility.py`, `visualize.py` | yes | smoke runs on 8M (train also on 150M) | 8M pretrained only |
+| 8M pretrained, seeds 42/43/44, before and after adaptation | yes | n/a | yes (run on a Mac) |
+| 35M, 150M pretrained, 150M random | yes | n/a | not run (GPU server) |
 
-No ESM-2 accessibility results are in the repository yet; `results/figures/` has only the additive baseline figure.
+First results (8M pretrained, strict probe split, last layer, after adaptation, seeds 42/43/44):
+
+| Order | Accessibility R squared |
+|---|---|
+| 1 | 0.61, 0.72, 0.73 |
+| 2 | 0.53, 0.38, 0.56 |
+| 3 | 0.11, -0.06, -0.05 |
+| 4 | -0.43, -1.05, -0.42 |
+
+Orders 1 and 2 are accessible, order 3 is about zero and order 4 is negative (worse than predicting the mean). Before adaptation, orders 2 to 4 are zero or negative at every layer except a weak order 2 signal in layers 4 to 6 (0.13 to 0.22). Fine-tuned test Spearman is 0.685, 0.695, 0.711 (FLIP test, 8,309 variants). Only three seeds and one size, so this says nothing yet about pretraining or capacity (questions 1 and 2). Figures 4 to 7 and `summary_table.csv` are in `results/`.
 
 ## References
 
