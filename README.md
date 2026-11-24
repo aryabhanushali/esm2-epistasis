@@ -173,6 +173,7 @@ Same layer and seeds (42/43/44), for comparison:
 - Order 3 is near zero and varies a lot between seeds. 8M random is not clearly worse than 8M pretrained on order 3, and 35M is not clearly better than 8M.
 - Before adaptation, pretrained 8M has orders 2 to 4 at zero or below except a weak order 2 signal (0.13 to 0.22) in layers 4 to 6.
 - Test Spearman on the FLIP test set (8,309 variants): 8M pretrained 0.685 / 0.695 / 0.711, 35M pretrained 0.694 / 0.678 / 0.707, 8M random 0.631 / 0.540 / 0.604. The random model also fits the task less well, so its accessibility gap is partly a training gap (see Limitations).
+- Random-split check (leaky, figure 8; mean over seeds, last layer): orders 1 to 4 score 0.97 / 0.93 / 0.89 / 0.86 for 8M pretrained, 0.97 / 0.90 / 0.82 / 0.78 for 8M random and 0.98 / 0.95 / 0.91 / 0.86 for 35M pretrained, with no difference between pretrained and random. About 81% of test-cube variants also appear in probe-training cubes, so these numbers reflect shared variants, not accessibility.
 - Three seeds and 8M/35M only: nothing here answers question 1, which concerns 150M. Figures 3 to 7 and `summary_table.csv` are in `results/`.
 
 ## References
