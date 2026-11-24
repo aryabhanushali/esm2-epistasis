@@ -187,3 +187,74 @@ def test_real_cubes_are_complete_and_consistent():
     assert counts == {"train": 7352, "val": 245, "test": 613, "mixed": 101_025}
     sets = {k: set(vertices[cubes["probe_split"] == k].ravel()) for k in ["train", "val", "test"]}
     assert sets["train"] & sets["val"] == sets["train"] & sets["test"] == {0}      # only wild type is shared
+
+
+# ---------------- probing (analysis/accessibility.py) ----------------
+def test_ridge_path_matches_sklearn():
+    from sklearn.linear_model import Ridge
+    from analysis.accessibility import ridge_path
+    rng = np.random.default_rng(3)
+    x, y = rng.normal(size=(200, 12)), rng.normal(size=200)
+    for (weights, intercept), alpha in zip(ridge_path(x, y, [0.1, 10.0]), [0.1, 10.0]):
+        reference = Ridge(alpha=alpha).fit(x, y)
+        assert np.allclose(weights, reference.coef_) and intercept == pytest.approx(reference.intercept_)
+
+
+def test_probe_recovers_linear_signal_and_not_noise():
+    from analysis.accessibility import fit_probe
+    rng = np.random.default_rng(4)
+    w = rng.normal(size=8)
+    x = {k: rng.normal(size=(n, 8)) for k, n in [("train", 400), ("val", 100), ("test", 200)]}
+    y = {k: v @ w + 0.01 * rng.normal(size=len(v)) for k, v in x.items()}
+    prediction, alpha, n_features = fit_probe(x["train"], y["train"], x["val"], y["val"], x["test"])
+    assert pooled_r2(y["test"], prediction) > 0.99 and n_features == 8
+    noise = rng.normal(size=200)                               # unrelated target: held-out R^2 must not be inflated
+    prediction, _, _ = fit_probe(x["train"], rng.normal(size=400), x["val"], rng.normal(size=100), x["test"])
+    assert pooled_r2(noise, prediction) < 0.1
+
+
+def test_probe_ignores_constant_features_and_has_no_test_leakage():
+    from analysis.accessibility import fit_probe
+    rng = np.random.default_rng(5)
+    x_train, x_val = rng.normal(size=(300, 4)), rng.normal(size=(60, 4))
+    x_train[:, 2] = 7.0                                        # constant in training -> dropped
+    y_train, y_val = x_train[:, 0] * 2, x_val[:, 0] * 2
+    x_test = rng.normal(size=(50, 4))
+    p1, _, n_features = fit_probe(x_train, y_train, x_val, y_val, x_test)
+    p2, _, _ = fit_probe(x_train, y_train, x_val, y_val, np.vstack([x_test, 100 * rng.normal(size=(50, 4))]))
+    assert n_features == 3
+    assert np.allclose(p1, p2[:50])                            # extra (wild) test rows do not change earlier predictions
+    zero, alpha, n = fit_probe(np.ones((10, 3)), np.arange(10.0), np.ones((4, 3)), np.arange(4.0), np.ones((5, 3)))
+    assert n == 0 and np.isnan(alpha) and np.allclose(zero, np.concatenate([np.arange(10.0), np.arange(4.0)]).mean())
+
+
+def test_accessibility_on_synthetic_cubes():
+    """If the representation contains the measured Walsh coefficients, accessibility is ~1 at every order;
+    if it is purely additive (no interactions), accessibility of orders >= 2 must not be positive."""
+    from analysis.accessibility import accessibility_by_order
+    rng = np.random.default_rng(6)
+    sizes = {"train": 600, "val": 120, "test": 150}
+    fitness = {k: rng.normal(size=(n, 16)) for k, n in sizes.items()}                 # random landscapes
+    truth = {k: walsh_transform(v) for k, v in fitness.items()}
+    informative = {k: np.repeat(truth[k][:, :, None], 3, axis=2) * [1.0, -2.0, 0.5] for k in sizes}
+    assert all(row["accessibility_r2"] > 0.99 for row in accessibility_by_order(informative, truth))
+    popcount = np.array([bin(v).count("1") for v in range(16)], dtype=float)
+    additive_values = {k: popcount[None, :, None] * rng.normal(size=(n, 1, 1)) for k, n in sizes.items()}   # additive in the bits
+    rep = {k: walsh_transform(v) for k, v in additive_values.items()}
+    for row in accessibility_by_order(rep, truth):
+        if row["order"] >= 2:
+            assert row["accessibility_r2"] < 0.05
+
+
+def test_cube_split_protocols():
+    from analysis.accessibility import cube_split_indices, seen_variant_fraction
+    labels = np.array(["train"] * 50 + ["val"] * 10 + ["test"] * 20 + ["mixed"] * 100)
+    strict = cube_split_indices(labels, "strict")
+    assert [len(strict[s]) for s in ("train", "val", "test")] == [50, 10, 20]
+    shuffled = cube_split_indices(labels, "random")
+    assert [len(shuffled[s]) for s in ("train", "val", "test")] == [50, 10, 20]
+    assert set(np.concatenate(list(shuffled.values()))) == set(np.flatnonzero(labels != "mixed"))   # same pool, no mixed
+    assert not (set(shuffled["train"]) & set(shuffled["test"]))                                      # cubes never shared
+    vertices = np.zeros((80, 16), dtype=int)
+    vertices[:, 1] = np.arange(80); vertices[:, 2] = np.arange(80) % 7 + 1000
+    assert seen_variant_fraction(vertices, {"train": np.arange(50), "test": np.arange(60, 80)}) < 1
