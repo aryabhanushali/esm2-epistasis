@@ -1,112 +1,137 @@
 # What does a protein language model learn about epistasis?
 
-How do pretraining and capacity shape what ESM-2 represents about epistasis (interactions between mutations)? We extend
-[ORBIT](https://arxiv.org/abs/2608.24953) (Rahimimovassagh et al., 2026) to ESM-2 on the GB1 four-site fitness landscape.
-Authors: Arya Bhanushali, Aryan Thakkar. The original proposal is in [proposal.md](proposal.md).
+We want to know how pretraining and model size affect what ESM-2 represents about epistasis (interactions between mutations). The setup follows ORBIT (Rahimimovassagh et al., 2026, arXiv:2608.24953) and applies it to ESM-2 on the GB1 four-site fitness landscape. Authors: Arya Bhanushali and Aryan Thakkar. The original proposal is in [proposal.md](proposal.md).
 
-## 1. Research questions (our expected outcomes are hypotheses, not results)
+## Research questions
 
-1. At identical architecture and parameter count, is **pretrained** ESM-2 150M more *interaction-accessible* than **randomly initialized** ESM-2 150M?
-2. Does accessibility of higher-order epistasis grow with **capacity** (8M → 35M → 150M, pretrained)?
-3. At which **layers** does accessibility for each interaction order (1–4) appear?
+The outcomes we expected in the proposal are hypotheses. We have not tested them yet.
 
-## 2. Method in plain language
+1. With the same architecture and parameter count, is pretrained ESM-2 150M more interaction-accessible than a randomly initialized ESM-2 150M?
+2. Does accessibility of higher-order epistasis grow with model size (8M, 35M, 150M, all pretrained)?
+3. At which layers does accessibility appear for each interaction order (1 to 4)?
 
-* **Data.** Wu et al. (2016) measured fitness of 149,361 of the 20⁴ variants of protein GB1 at four positions (39, 40, 41, 54; wild type V-D-G-V).
-* **Cube.** Pick one alternative amino acid per position. The 16 variants that use, at each position, either the wild-type or the chosen residue form a *cube*. 109,235 of the 19⁴ possible cubes have all 16 variants measured.
-* **Walsh-Hadamard transform (WHT).** Rewrites 16 fitness values as 16 coefficients ε_S, one per subset S of positions: constant (order 0), single-position effects (order 1), pairwise (2), three-way (3), four-way (4). A nonzero order-≥2 coefficient is epistasis. The same transform applied to a model's 16 hidden vectors gives representation coefficients r_S.
-* **Accessibility.** For layer ℓ and order k, a linear **ridge probe** predicts the measured ε_S from r_S. Accessibility is the **held-out R²** of that probe (can be negative = worse than predicting the mean).
-* **Models.** `facebook/esm2_t6_8M_UR50D`, `..._t12_35M_UR50D`, `..._t30_150M_UR50D` (pretrained) and a randomly initialized 150M of identical architecture. Each is adapted to predict fitness with LoRA + a linear head on the official FLIP split; hidden states are cached before and after adaptation.
+## Method
 
-### One cube, worked example (real data: alternatives I, Y, C, A; cube 41744)
+Data: Wu et al. (2016) measured the fitness of 149,361 of the 160,000 possible variants of protein GB1 at four positions (39, 40, 41, 54). The wild type at these positions is V, D, G, V.
 
-Vertex *v* is a 4-bit number; bit *i* = 1 means position *i* (39, 40, 41, 54) carries the alternative residue.
+Cube: pick one alternative amino acid for each of the four positions. The 16 variants that use either the wild-type residue or the chosen residue at each position form a cube. Of the 130,321 possible cubes, 109,235 have all 16 variants measured.
 
-| v | bits (54,41,40,39) | variant | fitness |   | v | bits | variant | fitness |
-|---|---|---|---|---|---|---|---|---|
-| 0 | 0000 | VDGV (wild type) | 1.000 | | 8  | 1000 | VDGA | 1.373 |
-| 1 | 0001 | IDGV | 1.446 | | 9  | 1001 | IDGA | 1.512 |
-| 2 | 0010 | VYGV | 3.891 | | 10 | 1010 | VYGA | 2.406 |
-| 3 | 0011 | IYGV | 4.388 | | 11 | 1011 | IYGA | 2.435 |
-| 4 | 0100 | VDCV | 0.061 | | 12 | 1100 | VDCA | 3.687 |
-| 5 | 0101 | IDCV | 0.111 | | 13 | 1101 | IDCA | 4.130 |
-| 6 | 0110 | VYCV | 0.143 | | 14 | 1110 | VYCA | 5.360 |
-| 7 | 0111 | IYCV | 0.189 | | 15 | 1111 | IYCA | 5.073 |
+Walsh-Hadamard transform (WHT): rewrites the 16 fitness values of a cube as 16 coefficients, one for each subset of positions. The constant is order 0, single-position effects are order 1, then pairwise (2), three-way (3) and four-way (4). A nonzero coefficient of order 2 or more is epistasis. Applying the same transform to a model's 16 hidden vectors gives the representation coefficients.
 
-WHT with ε_S = (1/16) Σ_v f(v)·χ_S(v), χ_S(v) = Π_{i∈S} x_i(v), x_i = −1 for wild type and +1 for mutant:
-constant 2.325; order 1: 39→0.085, 40→0.660, 41→0.019, 54→0.922; order 2 includes **41+54 → 1.297** (G41C alone is damaging, V54A is mild, together fitness is 3.7: epistasis);
-order 3 largest: 40+41+54 → 0.396; order 4: −0.035. The 16 coefficients reproduce the 16 fitness values exactly.
+Accessibility: for a layer and an interaction order, a linear ridge probe predicts the measured fitness coefficients from the representation coefficients. Accessibility is the R squared of that probe on held-out cubes. It can be negative, which means the probe does worse than predicting the mean.
 
-## 3. Pipeline
+Models: `facebook/esm2_t6_8M_UR50D`, `facebook/esm2_t12_35M_UR50D` and `facebook/esm2_t30_150M_UR50D` (pretrained), plus a randomly initialized 150M model with the same architecture. Each model is adapted to predict fitness with LoRA and a linear head on the official FLIP split. Hidden states are cached before and after adaptation.
+
+### Worked example (real data, cube 41744, alternatives I, Y, C, A)
+
+Vertex v is a 4-bit number. Bit i is 1 when position i (39, 40, 41, 54 for bits 0 to 3) carries the alternative residue.
+
+| v | bits | variant | fitness | v | bits | variant | fitness |
+|---|---|---|---|---|---|---|---|
+| 0 | 0000 | VDGV (wild type) | 1.000 | 8 | 1000 | VDGA | 1.373 |
+| 1 | 0001 | IDGV | 1.446 | 9 | 1001 | IDGA | 1.512 |
+| 2 | 0010 | VYGV | 3.891 | 10 | 1010 | VYGA | 2.406 |
+| 3 | 0011 | IYGV | 4.388 | 11 | 1011 | IYGA | 2.435 |
+| 4 | 0100 | VDCV | 0.061 | 12 | 1100 | VDCA | 3.687 |
+| 5 | 0101 | IDCV | 0.111 | 13 | 1101 | IDCA | 4.130 |
+| 6 | 0110 | VYCV | 0.143 | 14 | 1110 | VYCA | 5.360 |
+| 7 | 0111 | IYCV | 0.189 | 15 | 1111 | IYCA | 5.073 |
+
+The coefficient for a subset S is (1/16) times the sum over vertices of f(v) times the product of x_i for i in S, where x_i is -1 for the wild-type residue and +1 for the mutant. For this cube:
+
+- constant: 2.325
+- order 1: position 39 is 0.085, 40 is 0.660, 41 is 0.019, 54 is 0.922
+- order 2: the largest is positions 41 and 54 at 1.297. G41C alone is damaging (0.061) and V54A alone is mild (1.373), but together fitness is 3.687.
+- order 3: the largest is positions 40, 41 and 54 at 0.396
+- order 4: -0.035
+
+The 16 coefficients reproduce the 16 fitness values exactly.
+
+## Pipeline
 
 ```
-data/prepare_data.py ──► data/processed/variants.csv ─┬─► data/build_cubes.py ─► data/processed/cubes.npz
- (download FLIP GB1, validate)                         │     (109,235 cubes + AA-identity-strict probe split)
-                                                       │                         │
-methods/additive_baseline.py ◄─────────────────────────┤                         │
- (verify WHT / reproduce ORBIT ridge baseline)         ▼                         │
-methods/test_methods.py        models/train.py ─► checkpoints/<run>/{best,last}.pt, results/metrics/train_<run>.json
- (run BEFORE any model work)          │
-                                      ▼
-              models/extract_activations.py  --stage pre | post   ─► data/processed/activations/<condition>/layer_XX.npy
-                                      │
-                                      ▼
-              analysis/accessibility.py  ─► results/metrics/accessibility_<condition>_<protocol>.csv
-                                      │
-                                      ▼
-              analysis/visualize.py  ─► results/figures/*.png|pdf, results/metrics/summary_table.csv
+data/prepare_data.py -> data/processed/variants.csv
+        |
+        v
+data/build_cubes.py -> data/processed/cubes.npz
+        |                (109,235 cubes and the probe split)
+        |
+methods/additive_baseline.py   checks the WHT code against ORBIT
+methods/test_methods.py        run these tests before any model work
+        |
+        v
+models/train.py -> checkpoints/<run>/, results/metrics/train_<run>.json
+        |
+        v
+models/extract_activations.py (stage pre or post) -> data/processed/activations/<condition>/
+        |
+        v
+analysis/accessibility.py -> results/metrics/accessibility_<condition>_<protocol>.csv
+        |
+        v
+analysis/visualize.py -> results/figures/, results/metrics/summary_table.csv
 ```
 
-## 4. Repository structure
+## Repository structure
 
 | Path | Purpose |
 |---|---|
-| `methods/gb1.py` | Constants (positions, WT, paths) and the biological/Python/ESM-token indexing helpers |
-| `methods/wht.py` | WHT for scalars and hidden vectors, order grouping, Walsh energy, pooled R² |
-| `methods/additive_baseline.py` | Ridge-on-one-hot additive baseline + ORBIT verification experiment |
-| `methods/test_methods.py` | 24 pytest tests (cubes, indexing/tokenization, WHT, probe, splits) |
-| `data/prepare_data.py` | Download + validate FLIP GB1 data and official split |
-| `data/build_cubes.py` | Build all complete cubes, identity-strict probe split, overlap statistics |
-| `models/train.py` | LoRA (or optional full fine-tuning) + regression head; resumable |
-| `models/extract_activations.py` | Cache per-layer representations for each unique variant; resumable |
-| `analysis/accessibility.py` | Walsh-transform representations, ridge probes, accessibility CSVs |
-| `analysis/visualize.py` | Figures and summary table |
-| `checkpoints/` | Trained weights (git-ignored) · `results/metrics/` small CSV/JSON (committed) · `results/figures/` |
+| `methods/gb1.py` | Constants (positions, wild type, paths) and the indexing helpers |
+| `methods/wht.py` | WHT for scalars and hidden vectors, grouping by order, Walsh energy, pooled R squared |
+| `methods/additive_baseline.py` | Additive ridge baseline and the ORBIT verification experiment |
+| `methods/test_methods.py` | 24 pytest tests for cubes, indexing, tokenization, WHT, the probe and the splits |
+| `data/prepare_data.py` | Downloads and validates the FLIP GB1 data and the official split |
+| `data/build_cubes.py` | Builds all complete cubes and the probe split, and counts shared variants |
+| `models/train.py` | LoRA (or optional full fine-tuning) plus a regression head, resumable |
+| `models/extract_activations.py` | Caches per-layer representations for each unique variant, resumable |
+| `analysis/accessibility.py` | Walsh-transforms the representations and fits the ridge probes |
+| `analysis/visualize.py` | Figures and the summary table |
+| `checkpoints/` | Trained weights (not tracked by git) |
+| `results/metrics/`, `results/figures/` | Small CSV and JSON files and figures (tracked) |
 
-## 5. Setup
+## Setup
 
-Python 3.11 is required. On Apple Silicon use a native arm64 Python (`uv python install 3.11` gives one; an x86_64 Python under Rosetta cannot install the pinned torch).
+Python 3.11 is required. On Apple Silicon you need a native arm64 Python. `uv python install 3.11` gives you one. An x86_64 Python running under Rosetta cannot install the pinned torch version.
 
 ```bash
-git clone https://github.com/aryabhanushali/esm2-epistasis.git && cd esm2-epistasis
-python3.11 -m venv .venv && source .venv/bin/activate      # or: uv venv --python 3.11 .venv
-pip install -r requirements.txt                              # CPU / Apple MPS (macOS) or CUDA wheels (Linux default)
+git clone https://github.com/aryabhanushali/esm2-epistasis.git
+cd esm2-epistasis
+python3.11 -m venv .venv && source .venv/bin/activate    # or: uv venv --python 3.11 .venv
+pip install -r requirements.txt
 ```
-On a CUDA server, if the default wheel does not match your driver, install torch first from https://pytorch.org (e.g. `pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121`) and then the rest of `requirements.txt`. The device is chosen automatically (CUDA > Apple MPS > CPU); bfloat16 autocast is used on CUDA only. Run all commands from the repository root. Model weights (~600 MB for 150M) are downloaded from Hugging Face on first use.
 
-## 6. Running the project
+On a CUDA server, if the default torch wheel does not match the driver, install torch first from https://pytorch.org (for example `pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121`) and then install the rest of `requirements.txt`.
 
-**Step 0 – data and math checks (CPU, minutes; do this first).**
+The device is picked automatically (CUDA, then Apple MPS, then CPU). bfloat16 autocast is used on CUDA only. Run every command from the repository root. The ESM-2 weights download from Hugging Face on first use (about 600 MB for the 150M model).
+
+## Running the project
+
+Step 0, data and checks (CPU, a few minutes). Do this first.
+
 ```bash
-python -m data.prepare_data            # downloads FLIP files, validates, writes data/processed/variants.csv
-python -m data.build_cubes             # 109,235 cubes; asserts ORBIT's counts and writes cubes.npz
+python -m data.prepare_data
+python -m data.build_cubes
 python -m pytest methods/test_methods.py -q
-python -m methods.additive_baseline    # verification experiment -> results/metrics/additive_baseline.json
+python -m methods.additive_baseline
 ```
 
-**Step 1 – one experimental condition** (sizes `8M|35M|150M`, init `pretrained|random`, any seed):
+Step 1, one experimental condition. Sizes are `8M`, `35M`, `150M`. Init is `pretrained` or `random`.
+
 ```bash
-python -m models.train --size 150M --init random --seed 42                      # LoRA + head; add --resume to continue
-python -m models.extract_activations --size 150M --init random --stage pre  --seed 42   # saved random init weights
-python -m models.extract_activations --size 150M --init random --stage post --seed 42   # after adaptation
+python -m models.train --size 150M --init random --seed 42        # add --resume to continue an interrupted run
+python -m models.extract_activations --size 150M --init random --stage pre  --seed 42
+python -m models.extract_activations --size 150M --init random --stage post --seed 42
 python -m analysis.accessibility --size 150M --init random --stage pre  --seed 42
 python -m analysis.accessibility --size 150M --init random --stage post --seed 42
 ```
-For a pretrained model the `pre` stage is the unmodified Hugging Face model and does not depend on the seed.
 
-**Step 2 – all four primary conditions, three seeds** (this is the full experiment; run on a GPU server):
+For a pretrained model, the `pre` stage is the unmodified Hugging Face model, so it does not depend on the seed. For the random model, `pre` uses the initial weights saved before training.
+
+Step 2, all four conditions with three seeds. This is the full experiment and should run on a GPU server.
+
 ```bash
-for cfg in "8M pretrained" "35M pretrained" "150M pretrained" "150M random"; do set -- $cfg
+for cfg in "8M pretrained" "35M pretrained" "150M pretrained" "150M random"; do
+  set -- $cfg
   for seed in 42 43 44; do
     python -m models.train --size $1 --init $2 --seed $seed
     for stage in pre post; do
@@ -115,88 +140,101 @@ for cfg in "8M pretrained" "35M pretrained" "150M pretrained" "150M random"; do 
     done
   done
 done
-python -m analysis.visualize            # figures for stage 'post'; add --stage pre for representations before adaptation
+python -m analysis.visualize
 ```
-Everything is resumable: `train` with `--resume`; `extract_activations` and `accessibility` skip completed rows/layers.
 
-**Optional.** `--pooling mean` (extract + accessibility + visualize) for mean-pooled representations; `--protocol random` (accessibility) for the leaky random-cube sensitivity analysis; `--full-finetune --tag _fullft` (train, and extract with the same flags) for the full-fine-tuning control.
+`train` resumes with `--resume`. `extract_activations` and `accessibility` skip work that is already finished. `visualize` makes the figures for `post` by default. Add `--stage pre` for representations before adaptation.
 
-**Smoke test (8M, minutes on a laptop):** `python -m models.train --size 8M --init pretrained --max-samples 64 --epochs 2 --tag _smoke`, then extract with `--tag _smoke --stage post --max-variants 300`. Outputs tagged `_smoke` are ignored by the figure script unless `--include-smoke`.
+Optional runs:
 
-## 7. Data facts we verified (see `results/metrics/dataset_summary.txt`, `cube_summary.json`)
+- `--pooling mean` on extract, accessibility and visualize for mean-pooled representations
+- `--protocol random` on accessibility for the random-cube sensitivity analysis
+- `--full-finetune --tag _fullft` on train (and on extract) for the full fine-tuning control
 
-* 149,361 measured variants (of 160,000); no missing values or duplicates; wild type VDGV at fitness 1.0; fitness 0–8.76 with 29,477 exact zeros. Fitness is **used untransformed** (FLIP's `target` equals `Fitness`).
-* FLIP's `sequence` column is the 265-residue 5LDE construct; positions 39/40/41/54 (1-indexed) match all 149,361 variant strings. We feed ESM-2 only the **56-residue GB1 domain** (residues 1–56 of that sequence) – a deliberate choice for ~5× lower cost; the mutated residues are unchanged. ESM-2 token index of residue *p* is *p* (CLS at index 0); tested.
-* **Official FLIP `two_vs_rest`** covers only FLIP's filtered subset of 8,733 variants (not all 149,361): **train 381, validation 43** (FLIP's own validation flag, preserved; the 43 are the only model-selection data), **test 8,309** (3- and 4-mutants). The other 140,628 variants are unassigned (mostly near-zero fitness) and are used only through cubes.
-* 109,235 complete cubes (matches the proposal and ORBIT).
+Smoke test on a laptop:
 
-## 8. Interaction-accessibility protocol (what is reproduced from ORBIT, and how it was verified)
+```bash
+python -m models.train --size 8M --init pretrained --max-samples 64 --epochs 2 --tag _smoke
+python -m models.extract_activations --size 8M --init pretrained --stage post --tag _smoke --max-variants 300
+```
 
-Verified against ORBIT's **official code** (`maryam-rahimi/ORBIT-GB1`, which we read; we re-implemented, not copied) and the paper:
+Outputs tagged `_smoke` are ignored by the figure script unless you pass `--include-smoke`.
 
-| Item | Implementation | Verification |
+## Data checks (see `results/metrics/dataset_summary.txt` and `cube_summary.json`)
+
+- 149,361 measured variants out of 160,000. No missing values or duplicates. Wild type VDGV has fitness 1.0. Fitness ranges from 0 to 8.76 and 29,477 variants are exactly 0. We use fitness without any transformation (FLIP's `target` column equals `Fitness`).
+- The FLIP `sequence` column is the 265-residue 5LDE construct. Positions 39, 40, 41 and 54 (1-indexed) match the variant string for all 149,361 rows. We give ESM-2 only the first 56 residues, the GB1 domain, which is about 5 times cheaper. The mutated residues are the same. In ESM-2 the token index of residue p is p, because the CLS token sits at index 0. A test checks this.
+- The official FLIP `two_vs_rest` split covers only FLIP's filtered subset of 8,733 variants, not all 149,361. It has 381 training variants, 43 validation variants (FLIP's own validation flag, which we kept) and 8,309 test variants (3 and 4 mutations). The other 140,628 variants are not in the split and only enter through the cubes.
+- 109,235 complete cubes, matching the proposal and ORBIT.
+
+## Accessibility protocol
+
+We checked these details against ORBIT's official code (`maryam-rahimi/ORBIT-GB1`) and the paper. We wrote our own implementation.
+
+| Item | What we do | How it was checked |
 |---|---|---|
-| Vertex order, ±1 coding | bit *i* ↔ position *i*; bit 0 → −1, bit 1 → +1 | official code; unit tests |
-| WHT normalization | ε_S = (1/16)Σ f(v)χ_S(v) | paper eq. 6 + code; reconstruction/orthogonality tests |
-| Probe | one shared ridge per (layer, order), pooled over cubes **and** subsets of that order; α grid 1e-6…1e3 chosen on probe-validation only; near-constant features dropped; standardization with training statistics; refit on train+val; pooled R² on test | official code |
-| Probe split | AA-identity-strict: per position the 19 alternatives are permuted by `numpy.default_rng(42)` (one RNG, positions 39→54) and split 10/4/5; a cube is train/val/test only if all four alternatives fall in the same group, else "mixed" (discarded) | official code; **our counts match exactly: 7,352 / 245 / 613 / 101,025 mixed** |
-| Additive baseline | ridge on one-hot residues | see §9 |
+| Vertex order and sign coding | Bit i is position i. Bit 0 is -1 and bit 1 is +1. | Official code and unit tests |
+| WHT scaling | Coefficient = (1/16) times the sum of f(v) chi_S(v) | Paper eq. 6, official code, reconstruction and orthogonality tests |
+| Probe | One ridge probe per layer and order, pooled over cubes and over all subsets of that order. Alpha grid 1e-6 to 1e3 chosen on probe-validation cubes only. Near-constant features dropped. Features standardized with training statistics. Refit on train plus validation. Pooled R squared on test cubes. | Official code |
+| Probe split | For each position, the 19 alternative amino acids are shuffled with `numpy.random.default_rng(42)` (one generator, positions 39 to 54 in order) and split 10, 4 and 5 into train, validation and test groups. A cube belongs to a split only if all four of its alternatives are in that split's group. Other cubes are dropped. | Official code. Our counts match ORBIT exactly: 7,352, 245 and 613 cubes, 101,025 dropped. |
 
-The probe is solved in closed form (one eigendecomposition per order) instead of calling sklearn 10×; test `test_ridge_path_matches_sklearn` checks equality.
-**Leakage.** Probe train/val/test cubes share only the wild-type variant (verified, `cube_summary.json`), but ~11% of probe-test variants (146/1,282) are also FLIP-*test* variants and ~4% FLIP-train/validation (49/1,282), so a model fine-tuned on FLIP-train has seen few of them – this is ORBIT's own caveat. The `random` protocol (same 8,210 cubes, random assignment) shares many variants (in our 8M smoke run 81% of test-cube variants also appeared in probe-train cubes) and is reported only as a clearly labelled sensitivity analysis. Held-out R² is never replaced by training R²; negative values are kept.
+The probe is solved in closed form with one eigendecomposition per order instead of ten sklearn fits. A test checks it against sklearn.
 
-## 9. Verification results (reproduced vs. paper-reported)
+Overlap between probe splits: the train, validation and test cubes share only the wild-type variant. About 11% of the variants in probe-test cubes (146 of 1,282) are FLIP test variants, and about 4% (49 of 1,282) are FLIP train or validation variants. ORBIT mentions this too.
 
-`python -m methods.additive_baseline` (ridge strength chosen on the 43 FLIP validation variants → α = 1). Paper values are as extracted from the ORBIT arXiv HTML (Tables 1 and 3, ridge row); please confirm them against the PDF.
+The random-cube split uses the same 8,210 cubes, assigned at random. Many variants then appear in both probe train and test cubes (81% of test-cube variants in our 8M smoke run). We only report it as a sensitivity analysis. We never report training R squared as accessibility, and negative values are kept.
+
+## Verification against ORBIT's additive baseline
+
+`python -m methods.additive_baseline` fits a ridge model on one-hot residues, with the strength chosen on the 43 FLIP validation variants (alpha = 1). The paper values below were copied from the ORBIT arXiv HTML page (Tables 1 and 3, ridge row). Please compare them with the PDF before citing them.
 
 | Quantity | Ours | Paper |
 |---|---|---|
-| Order 2 / 3 / 4 functional recovery R²ₖ (613 probe-test cubes) | −0.0012 / −0.0147 / −0.0218 | −0.0012 / −0.0147 / −0.0218 |
-| Order 1 functional recovery R²₁ | 0.309 | 0.4126 |
-| FLIP test Spearman / R² / RMSE | 0.594 / −0.130 / 1.308 | 0.5617 / 0.1084 / 1.1619 |
-| max abs order 2–4 coefficient of additive predictions | 3e-16 | (should be 0) |
+| Order 2, 3, 4 recovery (613 probe-test cubes) | -0.0012, -0.0147, -0.0218 | -0.0012, -0.0147, -0.0218 |
+| Order 1 recovery | 0.309 | 0.4126 |
+| FLIP test Spearman, R squared, RMSE | 0.594, -0.130, 1.308 | 0.5617, 0.1084, 1.1619 |
+| Largest order 2 to 4 coefficient of the additive predictions | 3e-16 | should be 0 |
 
-The order ≥ 2 agreement to four decimals confirms our cube construction, probe split and WHT conventions. The paper does not state its ridge α or exact training set; as a **post-hoc diagnostic only** (it uses test metrics, so it is not used anywhere), α ≈ 3 fit on all 424 FLIP training variants gives R² 0.100, Spearman 0.564, R²₁ 0.409, close to the paper. Our reported baseline keeps the validation-selected α.
+The agreement for orders 2 to 4 (four decimals) supports our cube construction, probe split and WHT conventions. The paper does not give its ridge alpha or exact training set. As a diagnostic after the fact, alpha around 3 fit on all 424 FLIP training variants gives R squared 0.100, Spearman 0.564 and order 1 recovery 0.409, which is close to the paper. This diagnostic looks at test metrics, so we do not use it. The baseline we report keeps the validation-selected alpha.
 
-## 10. Assumptions, deviations and limitations
+## Assumptions and limitations
 
-* **Pooling.** Primary representation = concatenated hidden states at the 4 mutated positions (the same features the regression head reads; precedent: ORBIT-FMIB's ESM-2 analysis). ORBIT itself analysed small MLPs, not ESM-2, so there are **no published ESM-2 ORBIT numbers to reproduce**. Mean pooling is an optional secondary experiment.
-* **Layers.** Index 0 = embeddings, 1..L = transformer layers. HF applies ESM-2's final LayerNorm to layer L only. Different depths are compared by relative depth (layer/L) and absolute index.
-* **LoRA on a frozen random backbone is not equivalent to training a random network end-to-end**: the random weights stay fixed and only low-rank attention updates (query/key/value, rank 8) and the head adapt. A weak result for random init may reflect this limitation rather than the absence of pretraining. `--full-finetune` is provided as an optional control and is not part of the primary experiment. The initial random weights are saved (`checkpoints/<run>/initial_backbone.pt`) so before/after comparisons use identical initialization; matched pretrained/random runs also share LoRA/head initialization, data order, hyperparameters and seeds (initialization equality was checked with an ad-hoc script, not a unit test).
-* **Hyperparameters are not tuned** (lr 1e-3, 30 epochs, batch 16, LoRA r=8/α=16): the validation set has only 43 variants, which is too small for reliable tuning. It is used only for checkpoint selection. Test data is evaluated once, at the end.
-* The proposal says "train on ≤2 mutations from the 149,361 variants"; the official split trains on only the 424 FLIP-filtered ≤2-mutants (381 + 43).
-* The 56-residue input (vs FLIP's 265-residue construct) is our choice. Fitness is raw and heavy-tailed; MSE on raw fitness is used.
-* ORBIT-FMIB (a related paper using ESM-2) reports that its conclusions were unstable under replication; effects here may be small and sensitive to protocol, so we report all seeds and keep unfavorable results.
-* Not verified: ESM-2 may have seen GB1 homologs in pretraining (confound for question 1).
+- Representation. The primary representation is the hidden states at the four mutated positions, concatenated. This is the same input the regression head uses, and ORBIT-FMIB (arXiv:2610.00672) also uses mutated-site states for ESM-2. ORBIT itself studied small MLPs, so there are no published ESM-2 numbers from ORBIT to reproduce. Mean pooling is an optional secondary experiment.
+- Layers. Index 0 is the embedding layer and 1 to L are the transformer layers. Hugging Face applies ESM-2's final LayerNorm to layer L only. We compare models of different depth by relative depth (layer divided by L) and by absolute layer index.
+- LoRA on a frozen random backbone is not the same as training a random network end to end. The random weights stay fixed, and only the rank-8 updates on the attention query, key and value layers and the head are trained. A weak result for the random model could come from this limit and not from missing pretraining. `--full-finetune` is an optional control and is not part of the primary experiment. The initial random weights are saved in `checkpoints/<run>/initial_backbone.pt` so before and after comparisons use the same starting point. Matched pretrained and random runs also use the same LoRA and head initialization, data order and hyperparameters (we checked the initialization with a one-off script, not a unit test).
+- Hyperparameters are not tuned (learning rate 1e-3, 30 epochs, batch size 16, LoRA rank 8, alpha 16). The validation set has only 43 variants, which is too small to tune on. It is only used to pick the best epoch. The test set is evaluated once at the end.
+- The proposal says to train on all variants with at most 2 mutations. The official split trains only on the 424 such variants in FLIP's filtered set.
+- Fitness is heavy-tailed. We train with MSE on the raw values.
+- ORBIT-FMIB reports that its own conclusions changed under an independent replication. Effects here may be small and depend on the protocol, so we plan to report every seed and keep unfavorable results.
+- ESM-2 may have seen GB1 or close homologs during pretraining, which could affect question 1.
 
-## 11. Compute estimates (estimates unless marked measured)
+## Compute estimates
 
-* **Measured (Mac, MPS):** 8M extraction of 13,150 variants 25 s, 8M accessibility for 7 layers 58 s, 150M LoRA step on 64 samples ≈4 s/epoch, trainable parameters 924,161 of 149,309,402 (identical for pretrained and random).
-* **Disk (fp16 'sites' activations):** 8M 0.23 GB, 35M ≈0.66 GB, 150M ≈2.1 GB per condition; the full plan (4 models × pre + post × 3 seeds) ≈ 20 GB in `data/processed/activations/`.
-* **Memory:** training 150M needs a few GB of GPU memory (batch 16, length 58); accessibility for 150M peaks at roughly 6–8 GB of RAM per layer (only one layer is in memory).
-* **Time:** training minutes per run; accessibility for 150M estimated tens of minutes per condition on CPU (dominated by 2560×2560 eigendecompositions).
+Measured on a Mac (MPS): extracting 13,150 variants with the 8M model takes 25 s. Accessibility for 7 layers of the 8M model takes 58 s. One epoch of 150M LoRA on 64 samples takes about 4 s. The 150M model has 149,309,402 parameters, of which 924,161 are trainable with LoRA, for both pretrained and random.
 
-## 12. Status checklist
+Estimated (not measured): activations in fp16 take about 0.23 GB (8M), 0.66 GB (35M) and 2.1 GB (150M) per condition. The full plan with 4 models, before and after adaptation and 3 seeds takes about 20 GB in `data/processed/activations/`. Training 150M needs a few GB of GPU memory. Accessibility for 150M needs roughly 6 to 8 GB of RAM at a time because only one layer is loaded at once, and should take tens of minutes per condition on CPU.
 
-| Component | Implemented | Tested | Run on real experiment |
+## Status
+
+| Component | Implemented | Tested | Run on the real experiment |
 |---|---|---|---|
-| Data download/validation, cubes, probe split | ✅ | ✅ (counts match ORBIT) | ✅ |
-| WHT, additive baseline | ✅ | ✅ 24 unit tests pass | ✅ (§9) |
-| `models/train.py` (LoRA, resume, random init) | ✅ | ✅ 8M and 150M smoke runs (64 samples) | ⬜ |
-| `models/extract_activations.py` | ✅ | ✅ numerically checked against independent forward pass | ⬜ |
-| `analysis/accessibility.py` | ✅ | ✅ synthetic cubes + end-to-end 8M smoke | ⬜ |
-| `analysis/visualize.py` | ✅ | ✅ rendered on smoke data (discarded) | ⬜ |
-| Four primary conditions × 3 seeds, `pre` and `post` | – | – | ⬜ **not run** |
-| Mean-pooling, random-split sensitivity, full-fine-tuning control | ✅ (flags) | partly (random split on 8M smoke) | ⬜ |
+| Data download, validation, cubes, probe split | yes | yes (counts match ORBIT) | yes |
+| WHT and additive baseline | yes | yes (24 unit tests pass) | yes |
+| `models/train.py` | yes | smoke runs on 8M and 150M (64 samples) | no |
+| `models/extract_activations.py` | yes | checked against an independent forward pass | no |
+| `analysis/accessibility.py` | yes | synthetic cubes and an 8M smoke run | no |
+| `analysis/visualize.py` | yes | rendered on smoke data, which was then deleted | no |
+| 4 conditions, 3 seeds, before and after adaptation | n/a | n/a | not run |
+| Mean pooling, random-split sensitivity, full fine-tuning | yes (flags) | random split on the 8M smoke run only | no |
 
-No ESM-2 accessibility result is reported in this repository yet; `results/figures/` currently contains only the additive-baseline verification figure.
+No ESM-2 accessibility results are in the repository yet. `results/figures/` contains only the additive baseline figure.
 
-## 13. References
+## References
 
 1. Rahimimovassagh, Garibay, Yousefi (2026). Beyond tokens: probing higher-order epistasis in learned protein representations. arXiv:2608.24953. Code: github.com/maryam-rahimi/ORBIT-GB1.
 2. Wu et al. (2016). Adaptation in protein fitness landscapes is facilitated by indirect paths. eLife 5:e16965.
-3. Dallago et al. (2021). FLIP: benchmark tasks in fitness landscape inference for proteins. NeurIPS Datasets & Benchmarks. Data: github.com/J-SNACKKB/FLIP (`splits/gb1`).
+3. Dallago et al. (2021). FLIP: benchmark tasks in fitness landscape inference for proteins. NeurIPS Datasets and Benchmarks. Data: github.com/J-SNACKKB/FLIP (`splits/gb1`).
 4. Simon, Zou (2024). InterPLM. arXiv:2412.12101.
-5. Ahlmann-Eltze, Huber, Anders (2025). Nature Methods 22(8):1657–1661.
-6. Wittmann, Yue, Arnold (2021). Cell Systems 12(11):1026–1045.
-7. Related: ORBIT-FMIB, arXiv:2610.00672 (ESM-2 with mutated-site representations).
+5. Ahlmann-Eltze, Huber, Anders (2025). Nature Methods 22(8):1657-1661.
+6. Wittmann, Yue, Arnold (2021). Cell Systems 12(11):1026-1045.
+7. ORBIT-FMIB, arXiv:2610.00672 (ESM-2 analysis with mutated-site representations).
