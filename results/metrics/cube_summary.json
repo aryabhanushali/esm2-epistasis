@@ -1,0 +1,151 @@
+{
+  "counts": {
+    "train": 7352,
+    "val": 245,
+    "test": 613,
+    "mixed": 101025,
+    "complete": 109235
+  },
+  "amino_acid_partition_by_site": {
+    "V39": {
+      "train": [
+        "R",
+        "L",
+        "W",
+        "I",
+        "P",
+        "M",
+        "H",
+        "Y",
+        "E",
+        "A"
+      ],
+      "val": [
+        "S",
+        "G",
+        "N",
+        "D"
+      ],
+      "test": [
+        "F",
+        "T",
+        "C",
+        "Q",
+        "K"
+      ]
+    },
+    "D40": {
+      "train": [
+        "Y",
+        "L",
+        "M",
+        "K",
+        "G",
+        "C",
+        "I",
+        "P",
+        "H",
+        "S"
+      ],
+      "val": [
+        "A",
+        "Q",
+        "V",
+        "E"
+      ],
+      "test": [
+        "T",
+        "N",
+        "F",
+        "R",
+        "W"
+      ]
+    },
+    "G41": {
+      "train": [
+        "N",
+        "K",
+        "I",
+        "Q",
+        "L",
+        "Y",
+        "H",
+        "C",
+        "M",
+        "T"
+      ],
+      "val": [
+        "R",
+        "S",
+        "W",
+        "E"
+      ],
+      "test": [
+        "P",
+        "D",
+        "A",
+        "F",
+        "V"
+      ]
+    },
+    "V54": {
+      "train": [
+        "H",
+        "W",
+        "E",
+        "Y",
+        "A",
+        "Q",
+        "K",
+        "D",
+        "N",
+        "G"
+      ],
+      "val": [
+        "T",
+        "F",
+        "S",
+        "R"
+      ],
+      "test": [
+        "M",
+        "C",
+        "I",
+        "L",
+        "P"
+      ]
+    }
+  },
+  "split_seed": 42,
+  "overlap": {
+    "unique_variants": {
+      "train": 11259,
+      "val": 611,
+      "test": 1282
+    },
+    "shared_train_val": 1,
+    "shared_train_val_excluding_wild_type": 0,
+    "shared_train_test": 1,
+    "shared_train_test_excluding_wild_type": 0,
+    "shared_val_test": 1,
+    "shared_val_test_excluding_wild_type": 0,
+    "probe_train_variants_by_flip_split": {
+      "unassigned": 10268,
+      "test": 884,
+      "train": 100,
+      "val": 7
+    },
+    "probe_val_variants_by_flip_split": {
+      "unassigned": 585,
+      "train": 15,
+      "test": 8,
+      "val": 3
+    },
+    "probe_test_variants_by_flip_split": {
+      "unassigned": 1087,
+      "test": 146,
+      "train": 46,
+      "val": 3
+    }
+  }
+}

@@ -1,0 +1,189 @@
+"""Unit tests for cube construction, indexing and the Walsh-Hadamard transform.
+
+Run from the repository root:   python -m pytest methods/test_methods.py -q
+Tests marked 'data' need data/processed/*.{csv,npz} (run the data scripts first) and are skipped otherwise.
+"""
+import itertools
+
+import numpy as np
+import pytest
+
+from data.build_cubes import assign_probe_split, cube_vertex_variants, identity_partition
+from methods.gb1 import (POSITIONS, WT_SEQUENCE, WT_VARIANT, PROCESSED_DIR, alternatives_at,
+                         esm_token_index, variant_to_sequence)
+from methods.wht import (SUBSET_ORDERS, WALSH_MATRIX, energy_by_order, inverse_walsh_transform,
+                         pooled_r2, subsets_of_order, walsh_transform)
+
+
+def sign(vertex, site):
+    """Walsh coordinate x_i of a vertex: +1 if site i is mutated, else -1."""
+    return 1.0 if (vertex >> site) & 1 else -1.0
+
+
+def landscape(function):
+    """Vertex values f(v) for a function of the four coordinates (x0..x3)."""
+    return np.array([function(*[sign(v, i) for i in range(4)]) for v in range(16)])
+
+
+def reference_walsh(values):
+    """Direct, loop-based definition: eps_S = 1/16 * sum_v f(v) * prod_{i in S} x_i(v)."""
+    coefficients = np.zeros(16)
+    for subset in range(16):
+        for vertex in range(16):
+            character = 1.0
+            for site in range(4):
+                if (subset >> site) & 1:
+                    character *= sign(vertex, site)
+            coefficients[subset] += values[vertex] * character / 16
+    return coefficients
+
+
+# ---------------- cube construction and indexing ----------------
+def test_vertex_ordering():
+    cube = cube_vertex_variants("ACDE")
+    assert cube[0] == WT_VARIANT == "VDGV"
+    assert cube[1] == "ADGV"          # bit 0 -> site 0 (position 39)
+    assert cube[2] == "VCGV"          # bit 1 -> site 1 (position 40)
+    assert cube[4] == "VDDV"
+    assert cube[8] == "VDGE"
+    assert cube[5] == "ADDV"          # 0b0101 -> sites 0 and 2
+    assert cube[15] == "ACDE"
+    assert len(set(cube)) == 16
+
+
+def test_biological_vs_python_indexing():
+    sequence = variant_to_sequence("ACDE")
+    assert len(sequence) == 56 and variant_to_sequence(WT_VARIANT) == WT_SEQUENCE
+    for position, residue in zip(POSITIONS, "ACDE"):
+        assert sequence[position - 1] == residue            # 1-indexed biology -> 0-indexed Python
+    changed = [i for i, (a, b) in enumerate(zip(sequence, WT_SEQUENCE)) if a != b]
+    assert changed == [38, 39, 40, 53]
+
+
+def test_esm_tokenization_positions():
+    """ESM-2 token index of biological position p is p (the <cls> token takes index 0)."""
+    transformers = pytest.importorskip("transformers")
+    try:
+        tokenizer = transformers.AutoTokenizer.from_pretrained("facebook/esm2_t6_8M_UR50D")
+    except Exception as error:                                # offline machine
+        pytest.skip(f"tokenizer unavailable: {error}")
+    sequence = variant_to_sequence("ACDE")
+    ids = tokenizer(sequence)["input_ids"]
+    assert len(ids) == len(sequence) + 2                      # <cls> ... <eos>
+    assert ids[0] == tokenizer.cls_token_id and ids[-1] == tokenizer.eos_token_id
+    for position, residue in zip(POSITIONS, "ACDE"):
+        assert ids[esm_token_index(position)] == tokenizer.convert_tokens_to_ids(residue)
+
+
+# ---------------- Walsh-Hadamard transform ----------------
+def test_walsh_matrix_is_orthogonal():
+    assert np.allclose(WALSH_MATRIX.T @ WALSH_MATRIX, 16 * np.eye(16))
+    assert list(SUBSET_ORDERS[[0, 1, 3, 7, 15]]) == [0, 1, 2, 3, 4]
+    assert [len(subsets_of_order(k)) for k in range(5)] == [1, 4, 6, 4, 1]
+
+
+def test_constant_landscape():
+    coefficients = walsh_transform(np.full((1, 16), 3.5))[0]
+    assert coefficients[0] == pytest.approx(3.5)
+    assert np.allclose(coefficients[1:], 0)
+
+
+def test_additive_landscape_has_no_higher_order_terms():
+    a = [0.7, -1.2, 0.3, 2.0]
+    f = landscape(lambda x0, x1, x2, x3: 5 + a[0] * x0 + a[1] * x1 + a[2] * x2 + a[3] * x3)
+    coefficients = walsh_transform(f[None])[0]
+    assert coefficients[0] == pytest.approx(5)
+    assert [coefficients[1 << i] for i in range(4)] == pytest.approx(a)
+    for order in (2, 3, 4):
+        assert np.allclose(coefficients[subsets_of_order(order)], 0, atol=1e-12)
+
+
+@pytest.mark.parametrize("sites", [(0, 1), (1, 3), (0, 1, 2), (0, 2, 3), (0, 1, 2, 3)])
+def test_pure_interaction_lands_on_one_coefficient(sites):
+    f = landscape(lambda *x: np.prod([x[i] for i in sites]) * 2.0)
+    coefficients = walsh_transform(f[None])[0]
+    mask = sum(1 << i for i in sites)
+    assert coefficients[mask] == pytest.approx(2.0)
+    assert np.allclose(np.delete(coefficients, mask), 0, atol=1e-12)
+    assert SUBSET_ORDERS[mask] == len(sites)
+
+
+def test_mixed_orders_and_perfect_reconstruction():
+    f = landscape(lambda x0, x1, x2, x3: 1 + 0.5 * x0 - 2 * x1 * x2 + 0.25 * x0 * x2 * x3 + 3 * x0 * x1 * x2 * x3)
+    coefficients = walsh_transform(f[None])[0]
+    expected = {0: 1, 0b0001: 0.5, 0b0110: -2, 0b1101: 0.25, 0b1111: 3}
+    for subset in range(16):
+        assert coefficients[subset] == pytest.approx(expected.get(subset, 0), abs=1e-12)
+    assert np.allclose(inverse_walsh_transform(coefficients[None])[0], f)
+
+
+def test_vectorized_matches_reference_implementation():
+    rng = np.random.default_rng(0)
+    values = rng.normal(size=(20, 16))
+    fast = walsh_transform(values)
+    for row in range(20):
+        assert np.allclose(fast[row], reference_walsh(values[row]))
+    assert np.allclose(walsh_transform(values[3], axis=0), reference_walsh(values[3]))
+
+
+def test_scalar_and_multidimensional_transforms_agree():
+    rng = np.random.default_rng(1)
+    hidden = rng.normal(size=(7, 16, 5))
+    transformed = walsh_transform(hidden)
+    assert transformed.shape == (7, 16, 5)
+    for dimension in range(5):                                 # each hidden dimension is a scalar landscape
+        assert np.allclose(transformed[:, :, dimension], walsh_transform(hidden[:, :, dimension]))
+
+
+def test_energy_by_order_parseval():
+    rng = np.random.default_rng(2)
+    coefficients = walsh_transform(rng.normal(size=(6, 16, 3)))
+    raw, normalized = energy_by_order(coefficients)
+    assert np.allclose(raw.sum(axis=1), (coefficients ** 2).sum(axis=(1, 2)))
+    assert np.allclose(normalized[:, 1:].sum(axis=1), 1) and np.isnan(normalized[:, 0]).all()
+
+
+def test_pooled_r2():
+    truth = np.array([1.0, 2.0, 3.0, 4.0])
+    assert pooled_r2(truth, truth) == 1.0
+    assert pooled_r2(truth, np.full(4, truth.mean())) == pytest.approx(0.0)
+    assert pooled_r2(truth, truth[::-1]) < 0                    # negative R^2 is preserved
+
+
+# ---------------- amino-acid-identity-strict probe split ----------------
+def test_identity_partition_properties():
+    partition = identity_partition()
+    assert identity_partition() == partition                   # deterministic
+    for site, groups in enumerate(partition):
+        assert [len(groups[g]) for g in ("train", "val", "test")] == [10, 4, 5]
+        assert sorted(sum(groups.values(), [])) == sorted(alternatives_at(site))      # disjoint, covers 19 aa
+
+
+def test_probe_split_assignment_rule():
+    partition = identity_partition()
+    aa = "ACDEFGHIKLMNPQRSTVWY"
+    train_cube = [[aa.index(partition[s]["train"][0]) for s in range(4)]]
+    mixed_cube = [[aa.index(partition[0]["train"][0])] + [aa.index(partition[s]["test"][0]) for s in range(1, 4)]]
+    assert assign_probe_split(np.array(train_cube), partition)[0] == "train"
+    assert assign_probe_split(np.array(mixed_cube), partition)[0] == "mixed"
+
+
+# ---------------- tests on the real processed data ----------------
+data = pytest.mark.skipif(not (PROCESSED_DIR / "cubes.npz").exists(), reason="run the data scripts first")
+
+
+@data
+def test_real_cubes_are_complete_and_consistent():
+    import pandas as pd
+    variants = pd.read_csv(PROCESSED_DIR / "variants.csv")
+    cubes = np.load(PROCESSED_DIR / "cubes.npz")
+    vertices, alternatives = cubes["vertices"], cubes["alternatives"]
+    assert vertices.shape == (109_235, 16)
+    for cube in [0, 1000, len(vertices) - 1]:                  # vertex strings match the construction rule
+        alts = "".join("ACDEFGHIKLMNPQRSTVWY"[a] for a in alternatives[cube])
+        assert [variants["variant"][i] for i in vertices[cube]] == cube_vertex_variants(alts)
+    assert (variants["variant"][vertices[:, 0]] == WT_VARIANT).all()
+    counts = {k: int((cubes["probe_split"] == k).sum()) for k in ["train", "val", "test", "mixed"]}
+    assert counts == {"train": 7352, "val": 245, "test": 613, "mixed": 101_025}
+    sets = {k: set(vertices[cubes["probe_split"] == k].ravel()) for k in ["train", "val", "test"]}
+    assert sets["train"] & sets["val"] == sets["train"] & sets["test"] == {0}      # only wild type is shared

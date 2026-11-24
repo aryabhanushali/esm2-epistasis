@@ -1,0 +1,27 @@
+{
+  "our_reproduction": {
+    "alpha": 1.0,
+    "n_test": 8309,
+    "test_r2": -0.13038948504741277,
+    "test_spearman": 0.5936497427521531,
+    "test_rmse": 1.308311570057792,
+    "max_abs_predicted_order_2_to_4_coefficient": 3.3306690738754696e-16,
+    "functional_recovery_r2_probe_test_cubes": {
+      "1": 0.3090933214595656,
+      "2": -0.0012030694763147665,
+      "3": -0.014747904155463898,
+      "4": -0.021789713740427707
+    }
+  },
+  "reported_in_orbit_paper": {
+    "test_r2": 0.1084,
+    "test_spearman": 0.5617,
+    "test_rmse": 1.1619,
+    "functional_recovery_r2": {
+      "1": 0.4126,
+      "2": -0.0012,
+      "3": -0.0147,
+      "4": -0.0218
+    }
+  }
+}

@@ -1,0 +1,21 @@
+GB1 four-site landscape: 149361 measured of 160000 possible variants
+wild type VDGV at positions 39/40/41/54 verified (fitness 1.0); no missing values or duplicates
+fitness: untransformed; min 0 median 0.003384 mean 0.08051 max 8.762; 29477 exact zeros
+
+variants by number of mutations:
+  0: 1
+  1: 76
+  2: 2091
+  3: 26019
+  4: 121174
+
+official FLIP two_vs_rest split (train = WT + singles + doubles measured in FLIP's filtered set):
+split  test  train  unassigned  val
+HD                                 
+0         0      1           0    0
+1         0     26          49    1
+2         0    354        1695   42
+3      2566      0       23453    0
+4      5743      0      115431    0
+
+mean fitness by split: {"test": 1.1046, "train": 1.3373, "unassigned": 0.0162, "val": 1.2636}

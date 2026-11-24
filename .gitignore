@@ -1,0 +1,22 @@
+# environment
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.ipynb_checkpoints/
+
+# generated data (source code in data/ is kept)
+data/raw/
+data/processed/
+
+# model weights and cached activations
+checkpoints/*
+!checkpoints/.gitkeep
+activations/
+*.pt
+*.safetensors
+*.npy
+*.npz
+
+# results: keep small summaries (csv/json) and figures, ignore large files
+results/**/*.parquet
