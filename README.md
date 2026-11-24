@@ -149,9 +149,9 @@ Measured on a Mac (MPS): 8M extraction of 13,150 variants 25 s; 8M accessibility
 |---|---|---|---|
 | Data, cubes, probe split | yes | yes (counts match ORBIT) | yes |
 | WHT, additive baseline | yes | yes (24 tests) | yes |
-| `train.py`, `extract_activations.py`, `accessibility.py`, `visualize.py` | yes | smoke runs on 8M (train also on 150M) | 8M pretrained only |
-| 8M pretrained, seeds 42/43/44, before and after adaptation | yes | n/a | yes (run on a Mac) |
-| 35M, 150M pretrained, 150M random | yes | n/a | not run (GPU server) |
+| `train.py`, `extract_activations.py`, `accessibility.py`, `visualize.py` | yes | smoke runs on 8M (train also on 150M) | 8M and 35M |
+| 8M pretrained, 8M random, 35M pretrained, seeds 42/43/44, before and after adaptation | yes | n/a | yes (run on a Mac) |
+| 150M pretrained, 150M random | yes | n/a | not run (GPU server) |
 
 First results (8M pretrained, strict probe split, last layer, after adaptation, seeds 42/43/44):
 
@@ -162,7 +162,18 @@ First results (8M pretrained, strict probe split, last layer, after adaptation, 
 | 3 | 0.11, -0.06, -0.05 |
 | 4 | -0.43, -1.05, -0.42 |
 
-Orders 1 and 2 are accessible, order 3 is about zero and order 4 is negative (worse than predicting the mean). Before adaptation, orders 2 to 4 are zero or negative at every layer except a weak order 2 signal in layers 4 to 6 (0.13 to 0.22). Fine-tuned test Spearman is 0.685, 0.695, 0.711 (FLIP test, 8,309 variants). Only three seeds and one size, so this says nothing yet about pretraining or capacity (questions 1 and 2). Figures 4 to 7 and `summary_table.csv` are in `results/`.
+Same layer and seeds (42/43/44), for comparison:
+
+| Condition | Order 1 | Order 2 | Order 3 | Order 4 |
+|---|---|---|---|---|
+| 8M random | -0.57, -0.58, -0.33 | 0.16, -0.29, 0.23 | 0.09, -0.30, 0.17 | -0.49, -0.92, -0.35 |
+| 35M pretrained | 0.67, 0.48, 0.75 | 0.52, 0.46, 0.57 | 0.03, -0.21, 0.24 | -0.29, -0.18, -0.55 |
+
+- Orders 1 and 2 are accessible in pretrained models; order 4 is negative in every condition (worse than predicting the mean).
+- Order 3 is near zero and varies a lot between seeds. 8M random is not clearly worse than 8M pretrained on order 3, and 35M is not clearly better than 8M.
+- Before adaptation, pretrained 8M has orders 2 to 4 at zero or below except a weak order 2 signal (0.13 to 0.22) in layers 4 to 6.
+- Test Spearman on the FLIP test set (8,309 variants): 8M pretrained 0.685 / 0.695 / 0.711, 35M pretrained 0.694 / 0.678 / 0.707, 8M random 0.631 / 0.540 / 0.604. The random model also fits the task less well, so its accessibility gap is partly a training gap (see Limitations).
+- Three seeds and 8M/35M only: nothing here answers question 1, which concerns 150M. Figures 3 to 7 and `summary_table.csv` are in `results/`.
 
 ## References
 
